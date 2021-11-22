@@ -1,0 +1,425 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Downloader design - Erigon Book</title>
+        <!-- Custom HTML head -->
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="choice-of-storage-engine.html"><strong aria-hidden="true">1.</strong> Choice of storage engine</a></li><li class="chapter-item expanded "><a href="downloader-design.html" class="active"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Erigon Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="downloader-design"><a class="header" href="#downloader-design">Downloader design</a></h1>
+<p>Infrastructure for downloading headers, block bodies, and receipts that was inherited from go-ethereum does not integrate well with the concept of Staged Sync in Erigon. The code for this infrastructure is mostly contained in <code>eth/downloader</code> package. We would like
+to replace it with more minimalistic infrastructure that fits better into &quot;Staged Sync&quot; concept with more judicious use of concurrency and
+greater control over database objects, such as transactions.</p>
+<h2 id="current-code"><a class="header" href="#current-code">Current code</a></h2>
+<p>Code for the new downloader process is split between packages <code>cmd/headers/download</code>, <code>turbo/stages</code>, <code>turbo/stages/headerdownload</code>, <code>/turbo/stages/bodydownload</code>.</p>
+<h2 id="high-level-idea-about-header-download"><a class="header" href="#high-level-idea-about-header-download">High-level idea about header download</a></h2>
+<p>Header downloader process (represented by the type <code>headerdownload.HeaderDownload</code>) maintains data structure containing the collection of &quot;chain bundles&quot;. Each chain bundle consists of one anchor and some chain links. Each link corresponds to a block header. Links are connected to each other by <code>ParentHash</code> fields. If <code>ParentHash</code> of some links do not point to another link in the same bundle, they all must point to the anchor of this bundle. Here is graphic representation of chain bundle:</p>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-bundle-1.png" alt="Chain bundle 1" /></p>
+<p>And this is an example of multiple links pointing to the same anchor:</p>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-bundle-2.png" alt="Chain bundle 2" /></p>
+<p>As Header downloader process generates messages to be sent to other network peers, and as it receives messages from the peers, it
+keeps updating its collection of chain bundle. In many cases, new messages from other peers contain more block headers, and
+processing of these messages results in extending the existing bundles, merging bundles together, or appearance of new bundles.
+All such processing is performed by the member function <code>ProcessSegment</code> declared in the file <code>turbo/stages/headerdownload/headers_algo.go</code>.
+As the name of the function suggests, it processes &quot;chain segments&quot; that are received from the peers. What are the chain segments?</p>
+<p>Chain segments are simply sequences of headers connected to one another, without any branching. For example, this is a chain segment:</p>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-segment.png" alt="Chain segment" /></p>
+<p>But this is not:</p>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/not-chain-segment.png" alt="Not chain segment" /></p>
+<p>All the messages containing groups of headers are first split into segments before they are passed to the <code>ProcessSegment</code> function.
+This makes processing algorithms simpler than they would have been if branching bundles needed to be considered.</p>
+<p>The goal of adding more segments is to eventually construct a continous chain of headers starting from some pre-determined lowest point.
+This chain can be then verified (in the sense of Proof Of Work or Proof of Authority verification), and committed to the database.
+Once a chain of headers is committed to the database, the headers it contains may be evicted from memory to make space for more recent headers, and so on. Eventually, the heaviest existing header chain (also known as &quot;canonical chain&quot;) is assembled from segments,
+verified, and committed to the database, and turbo-geth can move to the next stage (downloading block bodies).</p>
+<h2 id="storing-chain-links-in-memory"><a class="header" href="#storing-chain-links-in-memory">Storing chain links in memory</a></h2>
+<p>Every chain link is represented by this structure:</p>
+<pre><code>    type Link struct {
+    blockHeight uint64
+    header      *types.Header
+    hash        common.Hash // Hash of the header
+    next        []*Link     // Allows iteration over links in ascending block height order
+    persisted   bool        // Whether this link comes from the database record
+    preverified bool        // Ancestor of pre-verified header
+    idx         int         // Index in the heap
+}
+</code></pre>
+<p>Field <code>blockHeight</code> has block height (also known as block number), for faster comparisons when the chain link is used in
+data structures like binary heap (extracting block height from the <code>header.Number</code>, which is <code>*big.Int</code> has non-trivial penalty,
+apparently).</p>
+<p>Field <code>header</code> is simply a pointer to the block header associated with this chain link. Field <code>hash</code> is a shorthand
+for <code>header.Hash()</code>, because the latter may also involve some extra work.</p>
+<p>Field <code>next</code> is essentially the reverse of the
+<code>header.ParentHash</code> links and allows traversing the chain links from parents to children, which is necessary for some algorithms.
+Field <code>persisted</code> is a flag that is set when a chain link gets committed into the database (persisted).</p>
+<p>Field <code>preverified</code>
+(it will probably be replaced by just <code>verified</code> soon) is a flag that is set for set of headers that are known to belong to the
+canonical chain (i.e. they have been added to the chain and the probability of them being removed is very close to zero).
+The hashes of such pre-verified headers are listed in the file <code>turbo/stages/preverified_hashes_mainnet.go</code> and similar (for other
+network). Any header that is a parent of a pre-verified header, is considered to be pre-verified. Theoretically, it would be
+enough to only specify one pre-verified header. But in practice, it makes sense to have a lot of them so that verification
+does not require loading the entire header chain first.</p>
+<p>Field <code>idx</code> has a very specific purpose. When chain link objects are placed into a priority queue (binary heap), it is useful
+to remove elements not always from the head of the priority queue (top of the binary heap), but from any location. Implementation
+of binary heap in Go allows that using function <code>heap.Remove</code>, which requires integer argument - position of the element in the
+heap. Using <code>idx</code> field, the actual position of chain links within binary heap is tracked (it gets updated in the <code>Swap</code> function).</p>
+<h2 id="priority-queues-for-persisted-and-non-persisted-chain-links"><a class="header" href="#priority-queues-for-persisted-and-non-persisted-chain-links">Priority queues for persisted and non-persisted chain links</a></h2>
+<p>Header download process only allows limited number of chain link in memory (by default 1048576). Currently, half of these &quot;slots&quot; are allocated to the persisted chain links, while another half - to the non-persisted chain links. In order to decide which chain links
+to evict when the slots become full, two priority queues are used - one for persisted chain links, another - for non-persisted chain
+links. The persisted links priority queue puts the link with the lowest block height on the top, therefore the &quot;oldest&quot; headers are getting
+cleaned up from memory first. The non-persisted link priority queue, on the other hand, puts the link with the highest block height on the
+top, therefore the &quot;youngest&quot; headers are getting clean up from memory first. The &quot;youngest&quot; headers that got removed, will need to
+be re-downloaded again.
+The idea about keeping &quot;younger&quot; persisted links and &quot;older&quot; non-persisted links is based on the observation that most processing
+is happening on the &quot;boundary&quot; between persisted and non-persisted chains.</p>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-links-persistent.png" alt="Chain link persisted" /></p>
+<h2 id="how-new-headers-are-queried-from-the-peers"><a class="header" href="#how-new-headers-are-queried-from-the-peers">How new headers are queried from the peers?</a></h2>
+<p>In order to keep up the &quot;supply&quot; of new header segments downloaded from the network peers, the header download process regularly issues
+two types of queries to the peers:</p>
+<ol>
+<li>Skeleton query. It is implemented by <code>RequestSkeleton</code> function in the <code>turbo/stages/headerdownload/header_algos.go</code> file. Skeleton
+query takes advantage of the <code>Skip</code> attribute of the <code>eth</code> protocol message <code>GetBlockHeaders</code>. If <code>Skip</code> is set to zero, then the
+protocol message means querying block headers forming chain segement, i.e., they are following one another. If <code>Skip</code> is not zero
+(in the case of <code>RequestSkeleton</code> it is <code>8*192=1536</code>), the protocol message means querying headers separated by 1536 other headers from each other.
+For example, message <code>GetBlockHeaders{Number: 1000, Length: 5, Skip: 6}</code>, queries headers with block heights <code>1000</code>, <code>1006</code>, <code>1012</code>,
+<code>1018</code>, 1024`. Note that skeleton queries are only generated when current number of non-persisted chain bundles (which is equal to number
+of anchors) is below certain threshold (currently 16). This is because processing an answer to a skeleton request would normally create up to 192 new anchors, and then it will take some time for the second type of queries (anchor extension queries) to fill the gaps and so reduce the number of anchors.</li>
+<li>Anchor extension query. It is implemented by <code>RequestMoreHeaders</code> function in the <code>turbo/stages/headerdownload/header_algos.go</code> file.
+The function uses an auxiliary data structure, <code>anchorQueue</code> to decide which anchors to select for queries first. This structure,
+<code>anchorQueue</code> is a priority queue of anchors, priorities by the timestamp of latest anchor extension query issued for an anchor.
+Anchors for which the extension queries were not issued for the longest time, come on top. The anchor on top gets repeated query,
+but only after certain timeout (currently 5 second) since the last query, and only of the anchor still exists (i.e. it has not been
+extended yet). Also, if an anchor gets certain number of extension requests issued (currently 10), but without luck of being extended,
+that anchor gets invalidated, and all its descendants get deleted from consideration (<code>invalidateAnchor</code> function). This would happen
+if anchor was &quot;fake&quot;, i.e. it corresponds to a header without existing ancestors.</li>
+</ol>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/header-requests.png" alt="Header requests" /></p>
+<p>The picture above illustrates (in a simplified manner) how the two types of queries work together. Time line is from left to right,
+block heights increase from bottom to top. We start with some persisted headers (in light blue). Then, a skeleton request is issued
+(it always start with <code>highestInDb</code> block height to make sure we make progress even if some data get lost). When response from the
+skeleton request is processed, we normally end up with multiple anchors attached to the single-header chain bundles. While there are
+many anchors, more skeleton requests are not issued, until the number of anchors goes below certain threshold. At this time, only
+anchor extension requests are issued, and the chain segments that arrive in response to those requests, cause the anchors to be
+replaced by the segments (extending down), until some chain bundles merge, and, as a result, anchors disappear. If any bundle gets
+connected to a persisted chain link (light blue), this allows the header insertions into the database (function <code>InsertHeaders</code> in
+<code>turbo/stages/headerdownload/header_algos.go</code> file gets invoked periodically to check there are some non-persisted chain links
+are connected to persisted links. After such insertion into the database, the <code>highestInDb</code> marker moves up. This means that the next
+skeleton query will target higher block heights. On the far right in the picture, we see the results of the second skeleton query.
+Although it does not usually happen, it is shown that the skeleton query returned the header on the same block height which is different
+from what we had previously. This is normal occurrence, because we assume that the header chain can fork at any time, therefore
+the data structures like chain bundles are used instead of simply chain segments. Eventually, the forked headers will also be persisted
+into the database if all their ancestors are also persisted.</p>
+<h2 id="how-chain-segments-received-from-the-peers-are-added-to-the-collection-of-chain-bundles"><a class="header" href="#how-chain-segments-received-from-the-peers-are-added-to-the-collection-of-chain-bundles">How chain segments received from the peers are added to the collection of chain bundles.</a></h2>
+<p>As mentioned previously, header download process maintains a collection of chain bundles in memory. That collection is &quot;held&quot; by
+the fields <code>links</code> and <code>anchors</code> of the type <code>HeaderDownload</code>, declared in the file <code>turbo/stages/headerdownload/header_data_struct.go</code>.
+Both of these fields are mappings from <code>common.Hash</code> to a <code>Link</code> pointer or to a <code>Anchor</code> pointer, respectively. As mentioned previously,
+there are limits (to prevent memory exhaustion attacks) on the amount of chain links and anchors referenced by these mappings.
+In order to enforce these limits, priority queues <code>linkQeue</code>, <code>pesistentLinkQueue</code>, and <code>anchorQueue</code> are used. The mappings themselves
+are crucial in the processing of the new header segments received from the peers.
+First of all, there is no guarantee that a message received from a peer, contains a chain segment. It may contain a collection of
+disparate headers (for example, in a response to the skeleton query), or any branched chain bundle (if a peer decided to send an
+unsolicited, but still useful bunch of headers). Therefore, any message received from a peer, needs to be split into chain segments.
+This is the job of the <code> SplitIntoSegments</code> function in the <code>turbo/stages/headerdownload/header_algos.go</code> file. It takes a collection
+of headers and return a collection of chain segments in a specific order. This order is the ascending order of the lowest block height
+in the segment. If we attach segments in such order, we guarantee that we will reconstruct the entire chain bundle, if the message
+prior to the splitting was a bundle, as demonstrated on the following illustration.</p>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/split-into-segments.png" alt="Split into segments" /></p>
+<p>The illustration above also demonstrates that there may be many possible ways to split a chain bundle into segments. The function
+<code>SplitIntoSegments</code> implements just one possibility, where the split in done in perhaps more segments that is strictly necessary,
+but with the advantage of simpler algorithm.</p>
+<p>Once segments are identified and ordered appropriately for the insertion, they are passed into <code>ProcessSegment</code> function, declared
+in the <code>turbo/stages/headerdownload/header_algos.go</code> file. This function starts with attempting to find an attachment of the new
+segment to an existing link, or an existing anchor, or both. This is the job of functions <code>findLink</code> and <code>findAnchor</code>.
+Function <code>findLink</code> is trying, using the <code>links</code> mapping, to find the highest existing link that the new segment can be attached to.</p>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/find-link.png" alt="Find link" /></p>
+<p>In the illustration above, it is assumed that the chain links marked by the same letters, for example, <code>F</code> and <code>G</code>, are identical,
+and they have the same hash, and they can be found using <code>links</code> mapping by that hash. The illustration also demonstrates that it is
+possible (and it is quite common) for the header download process to receive the same headers multiple times, like the headers
+<code>F</code> and <code>G</code> in the example. This means, in this example, that only chain links <code>A</code> and <code>B</code> will be used to extend the existing
+chain bundle, because <code>F</code> and <code>G</code> headers are already present.</p>
+<p>Function <code>findAnchor</code> tries to finds (using <code>anchors</code> mapping) the lowest link the in the new segment that can be attached to an
+existing anchor.</p>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/find-anchor.png" alt="Find anchor" /></p>
+<p>While <code>findLink</code> function finds the highest matching links in the existing bundles (via <code>links</code> mapping) and the new segment, the
+<code>findAnchor</code> function finds a pair <code>(anchor; link)</code> where anchor's hash is equal to the links's header's hash.</p>
+<p>Looking at the <code>ProgressSegment</code> function further, it can be seen that, depending on what <code>findLink</code> and <code>findAnchor</code> functions
+return, there can be 6 cases, called <code>connect</code>, <code>extendDown</code> (handles two cases), <code>extendUp</code>, and <code>newAnchor</code> (also handles two cases). These cases are shown schematically on
+the following illustration:</p>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/process-segement-table.png" alt="Process segment table" /></p>
+<p>Note that the illustration assumes that the new chain segment is already &quot;trimmed&quot; correctly (meaning that the headers already
+present are detected and removed) before applying one of these 4 functions. Such trimming is performed based on the second
+return values from the functions <code>findAnchor</code> (returns <code>start</code> index for trimming) and <code>findLink</code> (returns <code>end</code> index for trimming).</p>
+<p>As mentioned above, <code>newAnchor</code> function handles two distinct cases. In the first case, a new anchor is indeed created. In the
+second case, the chain segment is attached to the existing anchor. It is distinct from <code>extendUp</code> case, where the new chain
+segment is attached to a link, not to an anchor. The same applies to <code>extendDown</code> function. In one case it simply adds
+more links to an anchor, effectively making anchor hang lower. In another case, it actually connects two anchors.</p>
+<p>It would be more correct to have 6 functions covering 6 cases, but the necessary refactoring has not been performed yet.</p>
+<p>Once the new segment is applied to the existing chain bundles, the rest of the <code>ProcessSegment</code> function is dedicated to
+removing excessive non-persisted chain links (it makes sense because the beginning of <code>ProcessSegment</code> function is the only
+place where the number of chain links stored in memory may grow). Recall that the priority queue used to evict non-persisted
+chain links, <code>linkQueue</code>, puts the chain link with the highest block height on the top, to be evicted first. Whenever such
+chain links is evicted, not only it is deleted from the <code>links</code> mapping, but also any other pointers to it need to be removed
+from other data structures. Namely, the parent of this chain link may keep the pointer in its <code>next</code> field (consequently, the
+<code>next</code> field of the parent gets adjusted), and the anchor that may be &quot;hanging&quot; on the link, may keep the pointer in its <code>links</code>
+slice (that <code>links</code> slice allows walking from any anchor towards its chain links, for example, for the purpose of anchor invalidation).</p>
+<h2 id="how-the-headers-get-verified-according-to-pow-or-poa-rules-before-inserting-into-the-database"><a class="header" href="#how-the-headers-get-verified-according-to-pow-or-poa-rules-before-inserting-into-the-database">How the headers get verified (according to PoW or PoA rules) before inserting into the database?</a></h2>
+<p>As mentioned earlier, every chain link has a boolean flag <code>preverified</code>, and this will likely be changed to simply <code>verified</code> soon.
+Why? There are three ways in which a header can be verified:</p>
+<ol>
+<li>Pre-verification by hash. For headers that are ancestors (parent, parent of parent, etc.) of some headers that are known to be
+contained in the canonical chain and will never be reorganised, no verification needs to be performed. For some public chains,
+like main net, and some test nets, the list of such preverified headers is included into the source code of turbo-geth (it gets
+updated before each release, this will be included in the <code>RELEASE_INSTRUCTIONS.md</code> in the future).</li>
+<li>Pre-verification by preverified descendant. Once a new preveried header gets discovered (either by hash or by descendant), its
+parent header also gets marked as preverified, and so on, until either the chain of links stops, or the marking encounters already
+preverified header. This is implemented in the function <code>markPreverified</code> in the <code>turbo/stages/headerdownload/header_algos.go</code> file.
+This function is called from all 4 functions that apply new chain segment to the chain bundles (<code>connect</code>, <code>extendDown</code>, <code>extendUp</code>,
+<code>newAnchor</code>). That way, marking of the preverified headers does not require dedicated processing step.</li>
+<li>Verification of headers beyond previously known canonical chain. Together with the &quot;preverified hashes&quot;, source code is shipped
+with a number, which is the block height of the last preverified header. Consequently, if a downloaded header has a higher block height,
+it needs to be verified by the rules of PoW and PoA. Currently this happens as a part of insertion of the headers into the database.
+However, soon this will change, and such verification will be applied as a separate processing step, setting up the <code>verified</code> flags
+on the chain link objects. The reason why it needs to be performed as a separate processing step is that Consensus Engine separation
+project goes into the direction of asynchronous interaction between &quot;Core&quot; and &quot;Consensus Engine&quot;. That means that requests for verification
+will be issued to the Consensus Engine, but they will be responded to asynchronously, and other things (like downloading more headers
+or inserting preceding headers into the database) should be allowed to happen in the meantime. This is why <code>preverified</code> flag is likely
+to be generalised into <code>verified</code> flag, when it happens.</li>
+</ol>
+<h2 id="how-the-headers-get-inserted-into-the-database"><a class="header" href="#how-the-headers-get-inserted-into-the-database">How the headers get inserted into the database?</a></h2>
+<p>As mentioned earlier, chain links that have been inserted into the database (persisted) do not get immediately removed from memory,
+but some number of them stays until evicted. One reason to keep some of them around is to make sure that any branching occurring from
+the persisted links will be detected and processed correctly. Another reason to keep some of them around is that the persisted link
+with the highest block height serve as initiators for further insertions. Since persisted chain links have their <code>persisted</code> flag on,
+and non-persisted ones have their <code>persisted</code> flag off, the boundary between the values of this flag is used to determine when more
+insertion into the database should occur.</p>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/insert-list.png" alt="Insert list" /></p>
+<p>As shown in the illustration above, the chain links &quot;eligible&quot; for insertion are detected and added to the <code>insertList</code>, which is
+a member field of the header download process object. How does this detection happen? One way would be to somehow keep the record
+of the persisted chain links with the highest block height, and then periodically check if they become connected to some
+non-persisted chain links. However, this would be inefficient. Instead, if we look at the table of 4 operations performed in
+the <code>ProcessSegment</code> function, we can notice that only <code>extendUp</code> and <code>connect</code> operations can create a situation where
+persisted link is connected to a non-persisted link. And this is where (in the functions <code>extendUp</code> and <code>connect</code>) the <code>insertList</code> gets modified.
+What happens periodically is the call to the function <code>InsertHeaders</code> declared in the <code>turbo/stages/headerdownload/header_algos.go</code> file.
+This function attempts the iteration over <code>insertList</code>. It only considers the chain links that have been pre-verified (if the are
+below the <code>preverifiedHeight</code>) or otherwise it verifies them just before insertion. As mentioned earlier, this mechanism will change.
+Very likely, there will be another function, let's say <code>VerifyHeaders</code> that will iterate over <code>insertList</code> and issue asynchronous
+verification requests to the &quot;Consensus Engine&quot; for those headers that are not marked as <code>verified</code>. It is likely that chain links
+will need an extra field, let's say <code>verifyDeadline</code> that would contain the time when the previously issued verification request
+expires and a new one needs to be issued (to deal with potentially unreliable Consensus Engine). After such modification, the
+<code>InsertHeaders</code> function will not perform the header verification itself, but instead will simply expect the <code>verified</code> flag to be
+set for any header before it can get inserted into the database.
+If the header is selected for insertion, it gets removed from the <code>insertList</code>, and it also needs to be moved from non-persisted
+priority queue to persisted priority queue. This is where the <code>idx</code> member field is useful, because it allows invoking <code>heap.Remove(hd.linkQueue, link.idx)</code> to remove the chain link from the non-persisted priority queue regardless whether it is on the top or
+not. Note that if there is an error with insertion, the chain link gets removed from the non-persisted priority queue, but does not
+get added to the persisted priority queue. Perhaps it is a bug that it does not get removed from all data structures altogether.</p>
+<p>The actual insertion of the headers into the database is delegated to the function <code>hf</code> that is passed into <code>InsertHeaders</code> as an argument.
+This indirection exists for two reasons: to make <code>InsertHeaders</code> function smaller in size, and also to assist writing unit tests
+that do not necessarily need to insert anything into the database, but can keep headers ephemerally or simply do nothing.</p>
+<p>Since the <code>InsertHeaders</code> function is one of the two places where the number of persisted chain links can increase (another place is
+<code>RecordFromDb</code> function that is called once in the very beginning of the whole downloading process to read the initial set of
+persisted chan links from the database), at the end of this function there is code that enforces the limit on the persisted chain links
+in memory. Because there are no anchors below the &quot;persisted links&quot; line, and also the persisted link priority queue evicts the oldest
+links first, there is no need to adjust <code>next</code> fields on the parent links (parent links would have been evicted before children) or
+<code>links</code> field of the anchors (there are no anchors there), as it was done when limiting non-persisted chain links.</p>
+<p>In the non-testing settings, the role of <code>hf</code> function passed to <code>InsertHeaders</code> for the actual insertion into the database, is played
+by the <code>FeedHeader</code> function of the <code>HeaderInserter</code> type (note it is different from <code>HeaderDownload</code> type that is used as a &quot;receiver&quot;
+for most other functions described earlier). The job of this function is to insert one header at a time. An object of type
+<code>HeaderInserter</code> has all the necessary context to perform this job. For example, its member field <code>batch</code> is effectively a database handle
+with some buffering attached to it (also called &quot;mutation&quot; sometimes). First of all, function <code>FeedHeader</code> tries to establish
+whether the newly presented header will affect what will be considered the &quot;best header&quot; (or in other words, &quot;tip of the canonical chain&quot;).
+This could happen either due to adding a child header to the parent which was the &quot;best header&quot; (most common occurrence), or due to
+so-called reorg, where an alternative branch becomes the place of the &quot;best header&quot;. Currently, this check for whether the new header will
+be the best header, is done by comparing &quot;total difficulties&quot;, which is the concept taken from EtHash consensus, and &quot;shoehorned&quot; into
+Clique consensus (by declaring that &quot;out-of-order&quot; signed headers have difficulty 1, and &quot;in-order&quot; signed headers have difficulty 2).
+With the separation of Consensus Engine, this will need to change. Instead of relying on the notion of total difficulty, the insertion
+process will need to (asynchronously) ask the Consensus Engine to compare the existing &quot;best header&quot; with the new header to see if the new
+one is better than the &quot;best&quot;. Most likely it will lead to further decomposition of the <code>FeedHeader</code> function.</p>
+<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/best-header.png" alt="Best header" /></p>
+<p>In the case if the new header is to become the best header, and important thing to calculate is so-called <code>forkingPoint</code>. On the illustration
+above, two cases of replacing of the best header are shown. The first is a trivial one, when the chain simply grows, and in this case
+the previous best header (parent of the new header) is the <code>forkingPoint</code> (although, technically, there is no forking). In the second case,
+there is actual forking, and the <code>forkingPoint</code> is found by traversing the headers from the new header via <code>ParentHash</code> &quot;pointers&quot;, until
+a header currently belonging to the &quot;best chain&quot; (or in other words, &quot;canonical chain&quot;) is found. The processing of this second case
+can be seen in the code of the <code>FeedHeader</code> function as the loop over <code>ancestor</code>, <code>ancestorHeight</code> and <code>ancestorHash</code>. As expected, the
+loop terminates upon the equality of the canonical hash of given height (<code>ch</code>) and the <code>ancestorHash</code>.</p>
+<p>If the best header is getting replaced, a couple of special records in the database get updated: <code>HeadHeaderHash</code> (hash of the &quot;best header&quot;),
+<code>StageProcess(stages.Headers)</code> - block number indicating how far the &quot;Headers&quot; stage has advanced. Also, <code>unwindPoint</code> member field of
+the <code>HeaderInserter</code> is being updated, so that at the end of the inserting a group of block, the &quot;deepest&quot; forking point is known, and
+this is where the unwinding of all stages will need to be performed.</p>
+<p>Regardless of whether the best header is replaced or not, two other database records are updated - total difficulty of the new header
+(this is likely to be moved to the Consensus Engine in the future), and the mapping of hash of the new header to its RLP encoding.</p>
+<h2 id="construction-of-the-headers-sync-stage"><a class="header" href="#construction-of-the-headers-sync-stage">Construction of the Headers Sync stage</a></h2>
+<p>Now most of the parts necessary for the construction of the Headers Sync stage have been described. The code of the Headers Sync stage
+(not yet integrated into the default Staged Sync of turbo-geth, TODO will be posted further down) is in <code>eth/stagedsync/stage_headers_new.go</code>.
+As usual, a definition of a sync stage consists of two functions. The first function is invoked when the sync is moving in forward direction,
+i.e. when the block numbers are increasing. The second function is invoked only when there is unwinding (this is triggered when &quot;best header&quot;
+is replaced by a new header, which is not the direct descendant of the &quot;best header&quot;, as illustrated earlier). For the Headers Sync stage,
+these two functions are <code>HeadersForward</code> and <code>HeadersUnwind</code>.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="choice-of-storage-engine.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                            <a rel="next" href="flat-state-merklization.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="choice-of-storage-engine.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                    <a rel="next" href="flat-state-merklization.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+    </body>
+</html>
