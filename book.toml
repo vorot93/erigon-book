@@ -1,0 +1,6 @@
+[book]
+authors = ["Artem Vorotnikov"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Erigon Book"
