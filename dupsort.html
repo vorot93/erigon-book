@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Introduction - Erigon Book</title>
+        <title>DupSort feature explanation - Erigon Book</title>
         <!-- Custom HTML head -->
         <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
         <meta name="description" content="">
@@ -75,7 +75,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="choice-of-storage-engine.html"><strong aria-hidden="true">1.</strong> Why MDBX is our storage engine</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="dupsort.html"><strong aria-hidden="true">1.1.</strong> DupSort feature explanation</a></li></ol></li><li class="chapter-item expanded "><a href="downloader-design.html"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="choice-of-storage-engine.html"><strong aria-hidden="true">1.</strong> Why MDBX is our storage engine</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="dupsort.html" class="active"><strong aria-hidden="true">1.1.</strong> DupSort feature explanation</a></li></ol></li><li class="chapter-item expanded "><a href="downloader-design.html"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -134,53 +134,16 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
-<p><a href="https://github.com/ledgerwatch/erigon">Erigon</a> is a next-generation Ethereum implementation that introduces several new concepts:</p>
-<ul>
-<li>A modular client design, enabling parallelized development of the client</li>
-<li>New (“flat”) model of storing Ethereum state, allowing a lower disk footprint</li>
-<li>Preprocessing of data outside of the storage engine, making database write operations faster by a magnitude</li>
-<li>Staged synchronization technique, allowing very fast synchronization</li>
-</ul>
-<p>This brings the following benefits to the node operators:</p>
-<ul>
-<li>
-<p>Much lower disk footprint</p>
-<ul>
-<li>1.2TB for archive node, 430GB for pruned node.</li>
-</ul>
-</li>
-<li>
-<p>Faster sync speed</p>
-<ul>
-<li>Over 300 Mgas/s at tip of Ethereum mainnet.</li>
-<li>An archive node can be bootstrapped in under 3 days.</li>
-<li>Performance improvements allow Erigon to run even on HDD.</li>
-</ul>
-</li>
-<li>
-<p>Crash resilience</p>
-<ul>
-<li>Forceful shutdown or power failure cannot damage Erigon’s database.</li>
-</ul>
-</li>
-<li>
-<p>New vision of modularity</p>
-<ul>
-<li>P2P and web3 RPC services can be run as separate components on a remote machine.</li>
-</ul>
-</li>
-<li>
-<p>Full support for OpenEthereum/Parity <code>trace_</code> API, including <code>trace_filter</code></p>
-</li>
-</ul>
-<p>This book documents some of the know-hows that made these achievements possible.</p>
+                        <h1 id="dupsort-feature-explanation"><a class="header" href="#dupsort-feature-explanation">DupSort feature explanation</a></h1>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="next" href="choice-of-storage-engine.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="prev" href="choice-of-storage-engine.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                            <a rel="next" href="downloader-design.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         <div style="clear: both"></div>
@@ -189,7 +152,10 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="next" href="choice-of-storage-engine.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="prev" href="choice-of-storage-engine.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                    <a rel="next" href="downloader-design.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

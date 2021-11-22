@@ -75,7 +75,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="choice-of-storage-engine.html"><strong aria-hidden="true">1.</strong> Choice of storage engine</a></li><li class="chapter-item expanded "><a href="downloader-design.html" class="active"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="choice-of-storage-engine.html"><strong aria-hidden="true">1.</strong> Why MDBX is our storage engine</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="dupsort.html"><strong aria-hidden="true">1.1.</strong> DupSort feature explanation</a></li></ol></li><li class="chapter-item expanded "><a href="downloader-design.html" class="active"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -142,18 +142,18 @@ greater control over database objects, such as transactions.</p>
 <p>Code for the new downloader process is split between packages <code>cmd/headers/download</code>, <code>turbo/stages</code>, <code>turbo/stages/headerdownload</code>, <code>/turbo/stages/bodydownload</code>.</p>
 <h2 id="high-level-idea-about-header-download"><a class="header" href="#high-level-idea-about-header-download">High-level idea about header download</a></h2>
 <p>Header downloader process (represented by the type <code>headerdownload.HeaderDownload</code>) maintains data structure containing the collection of &quot;chain bundles&quot;. Each chain bundle consists of one anchor and some chain links. Each link corresponds to a block header. Links are connected to each other by <code>ParentHash</code> fields. If <code>ParentHash</code> of some links do not point to another link in the same bundle, they all must point to the anchor of this bundle. Here is graphic representation of chain bundle:</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-bundle-1.png" alt="Chain bundle 1" /></p>
+<p><img src="pics/chain-bundle-1.png" alt="Chain bundle 1" /></p>
 <p>And this is an example of multiple links pointing to the same anchor:</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-bundle-2.png" alt="Chain bundle 2" /></p>
+<p><img src="pics/chain-bundle-2.png" alt="Chain bundle 2" /></p>
 <p>As Header downloader process generates messages to be sent to other network peers, and as it receives messages from the peers, it
 keeps updating its collection of chain bundle. In many cases, new messages from other peers contain more block headers, and
 processing of these messages results in extending the existing bundles, merging bundles together, or appearance of new bundles.
 All such processing is performed by the member function <code>ProcessSegment</code> declared in the file <code>turbo/stages/headerdownload/headers_algo.go</code>.
 As the name of the function suggests, it processes &quot;chain segments&quot; that are received from the peers. What are the chain segments?</p>
 <p>Chain segments are simply sequences of headers connected to one another, without any branching. For example, this is a chain segment:</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-segment.png" alt="Chain segment" /></p>
+<p><img src="pics/chain-segment.png" alt="Chain segment" /></p>
 <p>But this is not:</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/not-chain-segment.png" alt="Not chain segment" /></p>
+<p><img src="pics/not-chain-segment.png" alt="Not chain segment" /></p>
 <p>All the messages containing groups of headers are first split into segments before they are passed to the <code>ProcessSegment</code> function.
 This makes processing algorithms simpler than they would have been if branching bundles needed to be considered.</p>
 <p>The goal of adding more segments is to eventually construct a continous chain of headers starting from some pre-determined lowest point.
@@ -200,7 +200,7 @@ top, therefore the &quot;youngest&quot; headers are getting clean up from memory
 be re-downloaded again.
 The idea about keeping &quot;younger&quot; persisted links and &quot;older&quot; non-persisted links is based on the observation that most processing
 is happening on the &quot;boundary&quot; between persisted and non-persisted chains.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-links-persistent.png" alt="Chain link persisted" /></p>
+<p><img src="pics/chain-links-persistent.png" alt="Chain link persisted" /></p>
 <h2 id="how-new-headers-are-queried-from-the-peers"><a class="header" href="#how-new-headers-are-queried-from-the-peers">How new headers are queried from the peers?</a></h2>
 <p>In order to keep up the &quot;supply&quot; of new header segments downloaded from the network peers, the header download process regularly issues
 two types of queries to the peers:</p>
@@ -221,7 +221,7 @@ extended yet). Also, if an anchor gets certain number of extension requests issu
 that anchor gets invalidated, and all its descendants get deleted from consideration (<code>invalidateAnchor</code> function). This would happen
 if anchor was &quot;fake&quot;, i.e. it corresponds to a header without existing ancestors.</li>
 </ol>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/header-requests.png" alt="Header requests" /></p>
+<p><img src="pics/header-requests.png" alt="Header requests" /></p>
 <p>The picture above illustrates (in a simplified manner) how the two types of queries work together. Time line is from left to right,
 block heights increase from bottom to top. We start with some persisted headers (in light blue). Then, a skeleton request is issued
 (it always start with <code>highestInDb</code> block height to make sure we make progress even if some data get lost). When response from the
@@ -251,7 +251,7 @@ This is the job of the <code> SplitIntoSegments</code> function in the <code>tur
 of headers and return a collection of chain segments in a specific order. This order is the ascending order of the lowest block height
 in the segment. If we attach segments in such order, we guarantee that we will reconstruct the entire chain bundle, if the message
 prior to the splitting was a bundle, as demonstrated on the following illustration.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/split-into-segments.png" alt="Split into segments" /></p>
+<p><img src="pics/split-into-segments.png" alt="Split into segments" /></p>
 <p>The illustration above also demonstrates that there may be many possible ways to split a chain bundle into segments. The function
 <code>SplitIntoSegments</code> implements just one possibility, where the split in done in perhaps more segments that is strictly necessary,
 but with the advantage of simpler algorithm.</p>
@@ -259,7 +259,7 @@ but with the advantage of simpler algorithm.</p>
 in the <code>turbo/stages/headerdownload/header_algos.go</code> file. This function starts with attempting to find an attachment of the new
 segment to an existing link, or an existing anchor, or both. This is the job of functions <code>findLink</code> and <code>findAnchor</code>.
 Function <code>findLink</code> is trying, using the <code>links</code> mapping, to find the highest existing link that the new segment can be attached to.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/find-link.png" alt="Find link" /></p>
+<p><img src="pics/find-link.png" alt="Find link" /></p>
 <p>In the illustration above, it is assumed that the chain links marked by the same letters, for example, <code>F</code> and <code>G</code>, are identical,
 and they have the same hash, and they can be found using <code>links</code> mapping by that hash. The illustration also demonstrates that it is
 possible (and it is quite common) for the header download process to receive the same headers multiple times, like the headers
@@ -267,13 +267,13 @@ possible (and it is quite common) for the header download process to receive the
 chain bundle, because <code>F</code> and <code>G</code> headers are already present.</p>
 <p>Function <code>findAnchor</code> tries to finds (using <code>anchors</code> mapping) the lowest link the in the new segment that can be attached to an
 existing anchor.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/find-anchor.png" alt="Find anchor" /></p>
+<p><img src="pics/find-anchor.png" alt="Find anchor" /></p>
 <p>While <code>findLink</code> function finds the highest matching links in the existing bundles (via <code>links</code> mapping) and the new segment, the
 <code>findAnchor</code> function finds a pair <code>(anchor; link)</code> where anchor's hash is equal to the links's header's hash.</p>
 <p>Looking at the <code>ProgressSegment</code> function further, it can be seen that, depending on what <code>findLink</code> and <code>findAnchor</code> functions
 return, there can be 6 cases, called <code>connect</code>, <code>extendDown</code> (handles two cases), <code>extendUp</code>, and <code>newAnchor</code> (also handles two cases). These cases are shown schematically on
 the following illustration:</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/process-segement-table.png" alt="Process segment table" /></p>
+<p><img src="pics/process-segment-table.png" alt="Process segment table" /></p>
 <p>Note that the illustration assumes that the new chain segment is already &quot;trimmed&quot; correctly (meaning that the headers already
 present are detected and removed) before applying one of these 4 functions. Such trimming is performed based on the second
 return values from the functions <code>findAnchor</code> (returns <code>start</code> index for trimming) and <code>findLink</code> (returns <code>end</code> index for trimming).</p>
@@ -320,7 +320,7 @@ the persisted links will be detected and processed correctly. Another reason to 
 with the highest block height serve as initiators for further insertions. Since persisted chain links have their <code>persisted</code> flag on,
 and non-persisted ones have their <code>persisted</code> flag off, the boundary between the values of this flag is used to determine when more
 insertion into the database should occur.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/insert-list.png" alt="Insert list" /></p>
+<p><img src="pics/insert-list.png" alt="Insert list" /></p>
 <p>As shown in the illustration above, the chain links &quot;eligible&quot; for insertion are detected and added to the <code>insertList</code>, which is
 a member field of the header download process object. How does this detection happen? One way would be to somehow keep the record
 of the persisted chain links with the highest block height, and then periodically check if they become connected to some
@@ -362,7 +362,7 @@ Clique consensus (by declaring that &quot;out-of-order&quot; signed headers have
 With the separation of Consensus Engine, this will need to change. Instead of relying on the notion of total difficulty, the insertion
 process will need to (asynchronously) ask the Consensus Engine to compare the existing &quot;best header&quot; with the new header to see if the new
 one is better than the &quot;best&quot;. Most likely it will lead to further decomposition of the <code>FeedHeader</code> function.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/best-header.png" alt="Best header" /></p>
+<p><img src="pics/best-header.png" alt="Best header" /></p>
 <p>In the case if the new header is to become the best header, and important thing to calculate is so-called <code>forkingPoint</code>. On the illustration
 above, two cases of replacing of the best header are shown. The first is a trivial one, when the chain simply grows, and in this case
 the previous best header (parent of the new header) is the <code>forkingPoint</code> (although, technically, there is no forking). In the second case,
@@ -388,7 +388,7 @@ these two functions are <code>HeadersForward</code> and <code>HeadersUnwind</cod
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="choice-of-storage-engine.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="dupsort.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                             <a rel="next" href="flat-state-merklization.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
@@ -400,7 +400,7 @@ these two functions are <code>HeadersForward</code> and <code>HeadersUnwind</cod
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="choice-of-storage-engine.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="dupsort.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                     <a rel="next" href="flat-state-merklization.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">

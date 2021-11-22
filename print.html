@@ -76,7 +76,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="choice-of-storage-engine.html"><strong aria-hidden="true">1.</strong> Choice of storage engine</a></li><li class="chapter-item expanded "><a href="downloader-design.html"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="choice-of-storage-engine.html"><strong aria-hidden="true">1.</strong> Why MDBX is our storage engine</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="dupsort.html"><strong aria-hidden="true">1.1.</strong> DupSort feature explanation</a></li></ol></li><li class="chapter-item expanded "><a href="downloader-design.html"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -176,35 +176,8 @@
 </li>
 </ul>
 <p>This book documents some of the know-hows that made these achievements possible.</p>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="choice-of-storage-engine"><a class="header" href="#choice-of-storage-engine">Choice of storage engine</a></h1>
-<p>We often get asked why we opted for our current storage engine, <a href="https://github.com/erthink/libmdbx">MDBX</a>.</p>
-<h1 id="why-not-leveldb--rocksdb"><a class="header" href="#why-not-leveldb--rocksdb">Why not LevelDB / RocksDB?</a></h1>
-<p>Answer is pretty simple: no MVCC.</p>
-<p>MVCC allows us to &quot;stitch together&quot; more complex data objects from more normalised form that is stored in the DB, without loss of consistency (if you do it all in a single read-only transaction). This is used quite a lot in the RPC daemon and simplifies the code a lot. You do not need to explicitly link all the data in the application-level code, you just trust that the database will give you consistent snapshot.</p>
-<p>Other than that, Level and Rocks are not ACID. This makes them extremely brittle and prone to corruption on application crash or power failure. Given that node sync from genesis is not cheap or instantaneous, this is a non-starter for us.</p>
-<h1 id="why-not-badgerdb"><a class="header" href="#why-not-badgerdb">Why not BadgerDB?</a></h1>
-<p>BadgerDB, unlike Level or Rocks, does provide transactions. However, there is a next issue we run into: Badger is based on <a href="https://en.wikipedia.org/wiki/Log-structured_merge-tree">Log-structured merge-tree</a>.</p>
-<p>Badger (and all LSM-based DBs) has background compaction. It's good for some projects and bad for others.</p>
-<p>In Erigon we eliminated most of concurrency (goroutines) for many reasons (too many things happening at the same time). We found that modern SSD (and NVMe) are still pretty bad with concurrent writes - they are way better than HDD, but sequential read is still order of magnitude faster than random reads. Meaning 1 thread touching disk vs 2 threads touching disk - can show 10x degradation.</p>
-<p><em>How does this apply to us?</em></p>
-<p><strong>We removed parallel writes and moved to control all disk touches</strong>. Now we don't really care about &quot;how much WPS database can handle&quot; because now we can fit all writes into 1 write transaction. Doesn't matter if it happens once per 10 minutes or once per 1 second - as long as it's not thousands of parallel WPS. In LMDB 1 write transaction is equal to 1 fsync syscall - all writes during transaction are happening in RAM.</p>
-<p>LSM databases (Badger, LevelDB) are slower on average for random reads, and that read times are more volatile. B+tree is faster and more predictable for random reads.</p>
-<h1 id="why-not-boltdb"><a class="header" href="#why-not-boltdb">Why not BoltDB?</a></h1>
-<p>Unlike Badger, Bolt is a Go library, providing storage engine based on B+tree. It originally fit well, and we had BoltDB backend available until September 2020.</p>
-<p>Bolt lacks certain advanced features that we found useful, like LMDB's sorted duplicates (DupSort). It allows to save space without resorting to compression by storing repetitive keys only once.</p>
-<p>Bolt is not actively maintained anymore, <a href="https://github.com/etcd-io/bbolt">although there is an active fork by etcd team</a>. And finally, it is a Go library, precluding usage and binary compatibility with <a href="https://github.com/torquem-ch/silkworm">Silkworm</a> and <a href="https://github.com/rust-ethereum/akula">Akula</a>.</p>
-<p>For all these reasons we switched to LMDB.</p>
-<h1 id="why-not-lmdb"><a class="header" href="#why-not-lmdb">Why not LMDB?</a></h1>
-<p>We used LMDB in the past, but have moved to MDBX which is a fork of LMDB with multiple improvements:</p>
-<ul>
-<li>Database file growth &quot;geometry&quot; works properly. This is important especially on Windows. In LMDB, one has to specify the memory map size once in advance (currently we use 2Tb by default), and if the database file grows over that limit, one has to restart the process. On Windows, setting memory map size to 2Tb makes database file 2Tb large on the onset, which is not very convenient. With MDBX, memory map size is increased in 2Gb increments. This means occasional remapping, but results in a better user experience.</li>
-<li>MDBX has more strict checks on concurrent use of the transaction handles, as well as overlap read and write transaction within the same thread of execution. This allowed us to find some non-obvious bugs and make behaviour more predictable.</li>
-<li>Over the period of more than 5 years (since it split from LMDB), MDBX accumulated a lot of safety fixes and heisenbug fixes that are still present in LMDB to the best of our knowledge. Some of them we have discovered during our testing, and MDBX maintainer took them seriously and worked on the fixes promptly.</li>
-<li>When it comes to databases that constantly modify data, they generate quite a lot of reclaimable space (also known as &quot;freelist&quot; in LMDB terminology). We had to patch LMDB to fix most serious drawbacks when working with reclaimable space (analysis here: https://github.com/ledgerwatch/erigon/wiki/LMDB-freelist-illustrated-guide). MDBX takes special care of efficient handling of reclaimable space and so far no patches were required.</li>
-<li>According to our tests, MDBX performs slightly better on our workloads.</li>
-<li>MDBX exposes more internal telemetry - more metrics of what happening inside DB. And we have them in Grafana - to make better decisions on app design. For example, after complete transition to MDBX (removing LMDB support) we will implement &quot;commit half-full transactions&quot; strategy to avoid spill/unspill disk touches. This will simplify our code further without affecting performance.</li>
-<li>MDBX has support for &quot;Exclusive open&quot; mode - we using it for DB migrations, to prevent any other reader from accessing the database while DB migration is in progress.</li>
-</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="why-mdbx-is-our-storage-engine"><a class="header" href="#why-mdbx-is-our-storage-engine">Why MDBX is our storage engine</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="dupsort-feature-explanation"><a class="header" href="#dupsort-feature-explanation">DupSort feature explanation</a></h1>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="downloader-design"><a class="header" href="#downloader-design">Downloader design</a></h1>
 <p>Infrastructure for downloading headers, block bodies, and receipts that was inherited from go-ethereum does not integrate well with the concept of Staged Sync in Erigon. The code for this infrastructure is mostly contained in <code>eth/downloader</code> package. We would like
 to replace it with more minimalistic infrastructure that fits better into &quot;Staged Sync&quot; concept with more judicious use of concurrency and
@@ -213,18 +186,18 @@ greater control over database objects, such as transactions.</p>
 <p>Code for the new downloader process is split between packages <code>cmd/headers/download</code>, <code>turbo/stages</code>, <code>turbo/stages/headerdownload</code>, <code>/turbo/stages/bodydownload</code>.</p>
 <h2 id="high-level-idea-about-header-download"><a class="header" href="#high-level-idea-about-header-download">High-level idea about header download</a></h2>
 <p>Header downloader process (represented by the type <code>headerdownload.HeaderDownload</code>) maintains data structure containing the collection of &quot;chain bundles&quot;. Each chain bundle consists of one anchor and some chain links. Each link corresponds to a block header. Links are connected to each other by <code>ParentHash</code> fields. If <code>ParentHash</code> of some links do not point to another link in the same bundle, they all must point to the anchor of this bundle. Here is graphic representation of chain bundle:</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-bundle-1.png" alt="Chain bundle 1" /></p>
+<p><img src="pics/chain-bundle-1.png" alt="Chain bundle 1" /></p>
 <p>And this is an example of multiple links pointing to the same anchor:</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-bundle-2.png" alt="Chain bundle 2" /></p>
+<p><img src="pics/chain-bundle-2.png" alt="Chain bundle 2" /></p>
 <p>As Header downloader process generates messages to be sent to other network peers, and as it receives messages from the peers, it
 keeps updating its collection of chain bundle. In many cases, new messages from other peers contain more block headers, and
 processing of these messages results in extending the existing bundles, merging bundles together, or appearance of new bundles.
 All such processing is performed by the member function <code>ProcessSegment</code> declared in the file <code>turbo/stages/headerdownload/headers_algo.go</code>.
 As the name of the function suggests, it processes &quot;chain segments&quot; that are received from the peers. What are the chain segments?</p>
 <p>Chain segments are simply sequences of headers connected to one another, without any branching. For example, this is a chain segment:</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-segment.png" alt="Chain segment" /></p>
+<p><img src="pics/chain-segment.png" alt="Chain segment" /></p>
 <p>But this is not:</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/not-chain-segment.png" alt="Not chain segment" /></p>
+<p><img src="pics/not-chain-segment.png" alt="Not chain segment" /></p>
 <p>All the messages containing groups of headers are first split into segments before they are passed to the <code>ProcessSegment</code> function.
 This makes processing algorithms simpler than they would have been if branching bundles needed to be considered.</p>
 <p>The goal of adding more segments is to eventually construct a continous chain of headers starting from some pre-determined lowest point.
@@ -271,7 +244,7 @@ top, therefore the &quot;youngest&quot; headers are getting clean up from memory
 be re-downloaded again.
 The idea about keeping &quot;younger&quot; persisted links and &quot;older&quot; non-persisted links is based on the observation that most processing
 is happening on the &quot;boundary&quot; between persisted and non-persisted chains.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/chain-links-persistent.png" alt="Chain link persisted" /></p>
+<p><img src="pics/chain-links-persistent.png" alt="Chain link persisted" /></p>
 <h2 id="how-new-headers-are-queried-from-the-peers"><a class="header" href="#how-new-headers-are-queried-from-the-peers">How new headers are queried from the peers?</a></h2>
 <p>In order to keep up the &quot;supply&quot; of new header segments downloaded from the network peers, the header download process regularly issues
 two types of queries to the peers:</p>
@@ -292,7 +265,7 @@ extended yet). Also, if an anchor gets certain number of extension requests issu
 that anchor gets invalidated, and all its descendants get deleted from consideration (<code>invalidateAnchor</code> function). This would happen
 if anchor was &quot;fake&quot;, i.e. it corresponds to a header without existing ancestors.</li>
 </ol>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/header-requests.png" alt="Header requests" /></p>
+<p><img src="pics/header-requests.png" alt="Header requests" /></p>
 <p>The picture above illustrates (in a simplified manner) how the two types of queries work together. Time line is from left to right,
 block heights increase from bottom to top. We start with some persisted headers (in light blue). Then, a skeleton request is issued
 (it always start with <code>highestInDb</code> block height to make sure we make progress even if some data get lost). When response from the
@@ -322,7 +295,7 @@ This is the job of the <code> SplitIntoSegments</code> function in the <code>tur
 of headers and return a collection of chain segments in a specific order. This order is the ascending order of the lowest block height
 in the segment. If we attach segments in such order, we guarantee that we will reconstruct the entire chain bundle, if the message
 prior to the splitting was a bundle, as demonstrated on the following illustration.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/split-into-segments.png" alt="Split into segments" /></p>
+<p><img src="pics/split-into-segments.png" alt="Split into segments" /></p>
 <p>The illustration above also demonstrates that there may be many possible ways to split a chain bundle into segments. The function
 <code>SplitIntoSegments</code> implements just one possibility, where the split in done in perhaps more segments that is strictly necessary,
 but with the advantage of simpler algorithm.</p>
@@ -330,7 +303,7 @@ but with the advantage of simpler algorithm.</p>
 in the <code>turbo/stages/headerdownload/header_algos.go</code> file. This function starts with attempting to find an attachment of the new
 segment to an existing link, or an existing anchor, or both. This is the job of functions <code>findLink</code> and <code>findAnchor</code>.
 Function <code>findLink</code> is trying, using the <code>links</code> mapping, to find the highest existing link that the new segment can be attached to.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/find-link.png" alt="Find link" /></p>
+<p><img src="pics/find-link.png" alt="Find link" /></p>
 <p>In the illustration above, it is assumed that the chain links marked by the same letters, for example, <code>F</code> and <code>G</code>, are identical,
 and they have the same hash, and they can be found using <code>links</code> mapping by that hash. The illustration also demonstrates that it is
 possible (and it is quite common) for the header download process to receive the same headers multiple times, like the headers
@@ -338,13 +311,13 @@ possible (and it is quite common) for the header download process to receive the
 chain bundle, because <code>F</code> and <code>G</code> headers are already present.</p>
 <p>Function <code>findAnchor</code> tries to finds (using <code>anchors</code> mapping) the lowest link the in the new segment that can be attached to an
 existing anchor.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/find-anchor.png" alt="Find anchor" /></p>
+<p><img src="pics/find-anchor.png" alt="Find anchor" /></p>
 <p>While <code>findLink</code> function finds the highest matching links in the existing bundles (via <code>links</code> mapping) and the new segment, the
 <code>findAnchor</code> function finds a pair <code>(anchor; link)</code> where anchor's hash is equal to the links's header's hash.</p>
 <p>Looking at the <code>ProgressSegment</code> function further, it can be seen that, depending on what <code>findLink</code> and <code>findAnchor</code> functions
 return, there can be 6 cases, called <code>connect</code>, <code>extendDown</code> (handles two cases), <code>extendUp</code>, and <code>newAnchor</code> (also handles two cases). These cases are shown schematically on
 the following illustration:</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/process-segement-table.png" alt="Process segment table" /></p>
+<p><img src="pics/process-segment-table.png" alt="Process segment table" /></p>
 <p>Note that the illustration assumes that the new chain segment is already &quot;trimmed&quot; correctly (meaning that the headers already
 present are detected and removed) before applying one of these 4 functions. Such trimming is performed based on the second
 return values from the functions <code>findAnchor</code> (returns <code>start</code> index for trimming) and <code>findLink</code> (returns <code>end</code> index for trimming).</p>
@@ -391,7 +364,7 @@ the persisted links will be detected and processed correctly. Another reason to 
 with the highest block height serve as initiators for further insertions. Since persisted chain links have their <code>persisted</code> flag on,
 and non-persisted ones have their <code>persisted</code> flag off, the boundary between the values of this flag is used to determine when more
 insertion into the database should occur.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/insert-list.png" alt="Insert list" /></p>
+<p><img src="pics/insert-list.png" alt="Insert list" /></p>
 <p>As shown in the illustration above, the chain links &quot;eligible&quot; for insertion are detected and added to the <code>insertList</code>, which is
 a member field of the header download process object. How does this detection happen? One way would be to somehow keep the record
 of the persisted chain links with the highest block height, and then periodically check if they become connected to some
@@ -433,7 +406,7 @@ Clique consensus (by declaring that &quot;out-of-order&quot; signed headers have
 With the separation of Consensus Engine, this will need to change. Instead of relying on the notion of total difficulty, the insertion
 process will need to (asynchronously) ask the Consensus Engine to compare the existing &quot;best header&quot; with the new header to see if the new
 one is better than the &quot;best&quot;. Most likely it will lead to further decomposition of the <code>FeedHeader</code> function.</p>
-<p><img src="https://github.com/ledgerwatch/erigon/blob/devel/docs/programmers_guide/best-header.png" alt="Best header" /></p>
+<p><img src="pics/best-header.png" alt="Best header" /></p>
 <p>In the case if the new header is to become the best header, and important thing to calculate is so-called <code>forkingPoint</code>. On the illustration
 above, two cases of replacing of the best header are shown. The first is a trivial one, when the chain simply grows, and in this case
 the previous best header (parent of the new header) is the <code>forkingPoint</code> (although, technically, there is no forking). In the second case,
