@@ -75,7 +75,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="choice-of-storage-engine.html" class="active"><strong aria-hidden="true">1.</strong> Why MDBX is our storage engine</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="dupsort.html"><strong aria-hidden="true">1.1.</strong> DupSort feature explanation</a></li></ol></li><li class="chapter-item expanded "><a href="downloader-design.html"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="mdbx.html" class="active"><strong aria-hidden="true">1.</strong> Why MDBX is our storage engine</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="mdbx-freelist.html"><strong aria-hidden="true">1.1.</strong> Freelist</a></li><li class="chapter-item expanded "><a href="mdbx-dupsort.html"><strong aria-hidden="true">1.2.</strong> DupSort feature explanation</a></li></ol></li><li class="chapter-item expanded "><a href="downloader-design.html"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -135,6 +135,34 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="why-mdbx-is-our-storage-engine"><a class="header" href="#why-mdbx-is-our-storage-engine">Why MDBX is our storage engine</a></h1>
+<p>We often get asked why we opted for our current storage engine, <a href="https://github.com/erthink/libmdbx">MDBX</a>.</p>
+<h2 id="why-not-leveldb--rocksdb"><a class="header" href="#why-not-leveldb--rocksdb">Why not LevelDB / RocksDB?</a></h2>
+<p>Answer is pretty simple: no MVCC.</p>
+<p>MVCC allows us to &quot;stitch together&quot; more complex data objects from more normalised form that is stored in the DB, without loss of consistency (if you do it all in a single read-only transaction). This is used quite a lot in the RPC daemon and simplifies the code a lot. You do not need to explicitly link all the data in the application-level code, you just trust that the database will give you consistent snapshot.</p>
+<p>Other than that, Level and Rocks are not ACID. This makes them extremely brittle and prone to corruption on application crash or power failure. Given that node sync from genesis is not cheap or instantaneous, this is a non-starter for us.</p>
+<h2 id="why-not-badgerdb"><a class="header" href="#why-not-badgerdb">Why not BadgerDB?</a></h2>
+<p>BadgerDB, unlike Level or Rocks, does provide transactions. However, there is a next issue we run into: Badger is based on <a href="https://en.wikipedia.org/wiki/Log-structured_merge-tree">Log-structured merge-tree</a>.</p>
+<p>Badger (and all LSM-based DBs) has background compaction. It's good for some projects and bad for others.</p>
+<p>In Erigon we eliminated most of concurrency (goroutines) for many reasons (too many things happening at the same time). We found that modern SSD (and NVMe) are still pretty bad with concurrent writes - they are way better than HDD, but sequential read is still order of magnitude faster than random reads. Meaning 1 thread touching disk vs 2 threads touching disk - can show 10x degradation.</p>
+<p><em>How does this apply to us?</em></p>
+<p><strong>We removed parallel writes and moved to control all disk touches</strong>. Now we don't really care about &quot;how much WPS database can handle&quot; because now we can fit all writes into 1 write transaction. Doesn't matter if it happens once per 10 minutes or once per 1 second - as long as it's not thousands of parallel WPS. In LMDB 1 write transaction is equal to 1 fsync syscall - all writes during transaction are happening in RAM.</p>
+<p>LSM databases (Badger, LevelDB) are slower on average for random reads, and that read times are more volatile. B+tree is faster and more predictable for random reads.</p>
+<h2 id="why-not-boltdb"><a class="header" href="#why-not-boltdb">Why not BoltDB?</a></h2>
+<p>Unlike Badger, Bolt is a Go library, providing storage engine based on B+tree. It originally fit well, and we had BoltDB backend available until September 2020.</p>
+<p>Bolt lacks certain advanced features that we found useful, like LMDB's sorted duplicates (DupSort). It allows to save space without resorting to compression by storing repetitive keys only once.</p>
+<p>Bolt is not actively maintained anymore, <a href="https://github.com/etcd-io/bbolt">although there is an active fork by etcd team</a>. And finally, it is a Go library, precluding usage and binary compatibility with <a href="https://github.com/torquem-ch/silkworm">Silkworm</a> and <a href="https://github.com/rust-ethereum/akula">Akula</a>.</p>
+<p>For all these reasons we switched to LMDB.</p>
+<h2 id="why-not-lmdb"><a class="header" href="#why-not-lmdb">Why not LMDB?</a></h2>
+<p>We used LMDB in the past, but have moved to MDBX which is a fork of LMDB with multiple improvements:</p>
+<ul>
+<li>Database file growth &quot;geometry&quot; works properly. This is important especially on Windows. In LMDB, one has to specify the memory map size once in advance (currently we use 2Tb by default), and if the database file grows over that limit, one has to restart the process. On Windows, setting memory map size to 2Tb makes database file 2Tb large on the onset, which is not very convenient. With MDBX, memory map size is increased in 2Gb increments. This means occasional remapping, but results in a better user experience.</li>
+<li>MDBX has more strict checks on concurrent use of the transaction handles, as well as overlap read and write transaction within the same thread of execution. This allowed us to find some non-obvious bugs and make behaviour more predictable.</li>
+<li>Over the period of more than 5 years (since it split from LMDB), MDBX accumulated a lot of safety fixes and heisenbug fixes that are still present in LMDB to the best of our knowledge. Some of them we have discovered during our testing, and MDBX maintainer took them seriously and worked on the fixes promptly.</li>
+<li>When it comes to databases that constantly modify data, they generate quite a lot of reclaimable space (also known as &quot;freelist&quot; in LMDB terminology). We had to patch LMDB to fix most serious drawbacks when working with reclaimable space (analysis here: https://github.com/ledgerwatch/erigon/wiki/LMDB-freelist-illustrated-guide). MDBX takes special care of efficient handling of reclaimable space and so far no patches were required.</li>
+<li>According to our tests, MDBX performs slightly better on our workloads.</li>
+<li>MDBX exposes more internal telemetry - more metrics of what happening inside DB. And we have them in Grafana - to make better decisions on app design. For example, after complete transition to MDBX (removing LMDB support) we will implement &quot;commit half-full transactions&quot; strategy to avoid spill/unspill disk touches. This will simplify our code further without affecting performance.</li>
+<li>MDBX has support for &quot;Exclusive open&quot; mode - we using it for DB migrations, to prevent any other reader from accessing the database while DB migration is in progress.</li>
+</ul>
 
                     </main>
 
@@ -143,7 +171,7 @@
                             <a rel="prev" href="introduction.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
-                            <a rel="next" href="dupsort.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="mdbx-freelist.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         <div style="clear: both"></div>
@@ -155,7 +183,7 @@
                     <a rel="prev" href="introduction.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
-                    <a rel="next" href="dupsort.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="mdbx-freelist.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

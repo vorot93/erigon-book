@@ -1,0 +1,215 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Freelist - Erigon Book</title>
+        <!-- Custom HTML head -->
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="mdbx.html"><strong aria-hidden="true">1.</strong> Why MDBX is our storage engine</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="mdbx-freelist.html" class="active"><strong aria-hidden="true">1.1.</strong> Freelist</a></li><li class="chapter-item expanded "><a href="mdbx-dupsort.html"><strong aria-hidden="true">1.2.</strong> DupSort feature explanation</a></li></ol></li><li class="chapter-item expanded "><a href="downloader-design.html"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Erigon Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="freelist"><a class="header" href="#freelist">Freelist</a></h1>
+<h2 id="how-modifying-the-data-gives-rise-to-freelist"><a class="header" href="#how-modifying-the-data-gives-rise-to-freelist">How modifying the data gives rise to freelist</a></h2>
+<p>MDBX supports Multi Version Concurrency Control (MVCC), which is a feature that allows readers of the database &quot;lock in&quot; a view of the database and that that view be &quot;frozen&quot;, undisturbed until the reader disconnects. By reader here we understand any transaction (read-only or writable). There is a limitation on how many readers may simultaneously connect, but once allowed to connect, the reader can view the &quot;frozen&quot; image of the database for as long as required. Maintenance of this property puts constraints on how modification of data can be performed. In particular, all modification of data by writeable transactions need to be done using &quot;copy on write&quot; pattern.
+For example, lets imagine this state of the database before modifying an element with value <strong>v5</strong>:
+<img src="pics/mdbx-freelist/1.png" alt="" /></p>
+<p>To ensure that any reader that is currently looking at the database via the <em>root</em> page pointer, or in fact any reader that may come along during the execution of our modifications, sees undisrupted image of the database, our modification must not change any pages that are reachable from the <em>root</em> pointer. Therefore, we create a <em>new root</em> pointer, and create an alternative B+-tree that will contain previous database image with our modifications applied:
+<img src="pics/mdbx-freelist/2.png" alt="" /></p>
+<p>As shown on the picture, this modification will require allocation of four pages (either by increasing the file size, or by recycling previously freed space): <code>H</code>, <code>G</code>, <code>I</code>, <code>J</code>, and three pages <code>A</code>, <code>C</code>, <code>F</code> will be marked as potentially recyclable.</p>
+<p>The list of these potentially recyclable pages is called freelist. Most of the pages added to the freelist during modifications, cannot be recycled while the writeable transaction is in flight. This is because any readers connecting before the writable transaction commits, will still see the <em>root</em> and all the pages reachable from it. This is similar to the problem garbage collector faces when determining unreachable objects. Starting points of reachability analysis for a garbage collector are global variable and stack of active threads. Similarly, the starting point for the MVCC reachability analysis are the <em>root</em> pointer (only one global variable) and the root pointers grabbed by any active readers:
+<img src="pics/mdbx-freelist/3.png" alt="" /></p>
+<h2 id="how-deleting-the-data-gives-rise-to-freelist-in-transaction-objects"><a class="header" href="#how-deleting-the-data-gives-rise-to-freelist-in-transaction-objects">How deleting the data gives rise to freelist (in transaction objects)</a></h2>
+<p>Deleting is a type of modification and all said before about modifications apply here. With deletions, however, there is one more interesting case - pages that were allocated during the transaction (for modification) but then subsequently freed by deletions. For example, if, after modification shown above, we decided to delete record with values <strong>v9</strong> and <strong>v6</strong>, we would end up with an empty page. But this is the page we have previously allocated, and it is not reachable from the <em>root</em> page pointer, therefore it can be reused straight away. Such pages are called &quot;loose pages&quot;:
+<img src="pics/mdbx-freelist/4.png" alt="" /></p>
+<p>In the description below, there is a distinction between emptied pages that cannot be recycled yet, and loose pages. There are stored in the different data structures.</p>
+<p>In MDBX, data can be deleted in two main ways:</p>
+<ol>
+<li><strong>deleting keys from a cursor</strong></li>
+<li><strong>removing an entire table</strong> (DBI)</li>
+</ol>
+<p><strong>Deleting keys from a cursor</strong> may cause rebalancing of the B+-tree, because one of the invariants that need to be maintained in a B+-tree says that all pages, except for the root page, must be at least half-full. So, if deleting keys makes a page less than half-full, rebalancing happens - keys and values are moved between pages. Some of these rebalancing cause some pages become empty.</p>
+<p><strong>Removing an entire table</strong> (DBI) is a simpler operation than deleting keys from a cursor, because it does not require any rebalancing. Any table always starts with its own root page, and pages are never shared between tables. Therefore, removing an entire table requires finding all the pages that belong to that table.</p>
+<p>As we see from above, both ways may produce new empty pages. These empty pages are usually in middle of the database file, and we would like to fill them up (later) with the new data, to prevent the database file from growing too fast.</p>
+<p>Since any changes to the database can only occur as a result of a writeable transaction, a transaction object should have some transient data structures to keep the list of pages this transaction emptied. At the time of the transaction commit, these structures are converted into persistent form inside the database.
+There are two transient data structures in which a transaction object keeps the IDs of emptied pages:</p>
+<ol>
+<li><code>MDBX_IDL mt_free_pgs;</code> Type <code>MDBX_IDL</code> stands for &quot;ID list&quot;, and it is a pointer for a list of 8-byte Page IDs, starting with the length of the list at the index 0. Therefore, you can often see <code>txn-&gt;mt_free_pgs[0]</code> as the expression to take the length of the page ID list. This list is pre-allocated to certain size, and therefore, if something needs to be added, such list sometimes needs to be reallocated and moved.</li>
+<li><code>MDBX_page *mt_loose_pgs;</code> Type <code>MDBX_page</code> is the structure describing page header. At the beginning of any page, there is a space for either page number of a pointer to another page header. Therefore, <code>mt_loose_pgs</code> is the head of a linked list of page headers, which is convenient for adding and remove pages one by one.</li>
+</ol>
+<p>Conceptually, these two data structures of a transaction object contain the same kind of information - pages emptied by the transaction, but they are kept and maintained in different forms (slice of IDs and linked list of page headers). The reason for this is as follows. Loose pages from <code>mt_loose_pgs</code> are allowed to be re-used during the same transaction, whereas the pages from <code>mt_free_pgs</code> are not allowed to be re-used. The re-use happens in the function <code>mdbx_page_alloc</code>. This distinction about allowed re-use drives the decisions on when emptied pages are added to one list or another. Pages that have been allocated by this current transaction (either from the expansion of the database or from recycling of the freelist), are known not to be accessed by any other transactions. Such pages end up being marked with <code>P_DIRTY</code> flag. Therefore, having such flag becomes necessary (but not sufficient) criteria for a page to end up in the <code>mt_loose_pgs</code> linked list when emptied.</p>
+<ol>
+<li>When an entire table is removed, the emptied pages always get added to the <code>mt_free_pgs</code>, ostensibly for efficiency. If there are many page IDs that were emptied, it is very unlikely that many of them have been allocated by the current transaction, so they are all added to the <code>mt_free_pgs</code>, even those some of them might be eligible for <code>mt_loose_pgs</code>. The function where appending to <code>mt_free_pgs</code> is performed is <code>mdbx_drop0</code>.</li>
+<li>When rebalancing is performed, if a page has too few entries, and its neighbour page is also just at the threshold or below, the two pages are merged. This merging creates an empty page, and it is added to the <code>mt_loose_pgs</code> if it is marked with <code>P_DIRTY</code> flag and it is not part of the &quot;special&quot; freelist table <code>FREE_DBI</code>. Otherwise, it is added to the <code>mt_free_pgs</code></li>
+</ol>
+<p>At the transaction commit, both structures <code>mt_free_pgs</code> and <code>mt_loose_pgs</code> are effectively merged together and persisted as a record in the &quot;special&quot; freelist table <code>FREE_DBI</code>. Such record has transaction IDs as a key, and the value is the encoding of the sorted list of page IDs, 8 byte per ID. Transaction IDs increase monotonously throughout the life of the database, so they can be used as &quot;versions&quot; for the purposes of MVCC (Multi Version Concurrency Control). The function that persists these two data structures is <code>mdbx_freelist_save</code>, and it has some nuances that cause performance issues when freelists become large. I will describe the mechanics of this function and the issues later...</p>
+<h2 id="old-pages-state-in-the-environment-object"><a class="header" href="#old-pages-state-in-the-environment-object">Old pages state in the environment object</a></h2>
+<p>Environment object has a field <code>MDBX_pgstate me_pgstate;</code>, which is a structure consisting on two elements. These two elements are &quot;aliased&quot; (using <code>#define</code> directive) to the name <code>me_pghead</code> and <code>me_pglast</code> accordingly.</p>
+<p>The first element, <code>me_pghead</code> is a pointer to the list of page IDs. These are the IDs of pages that can be re-used by the current transaction, if required. Page IDs get into the <code>me_pghead</code> list by being read from the beginning of the freelist table <code>FREE_DBI</code>. You may remember that the keys in the freelist tables are transaction IDs, or in other words, version numbers, indicating &quot;when&quot; certain page IDs became part of the freelist.</p>
+<p>The second element, <code>me_pglast</code>, is a number representing the version number (transaction ID), whose freelist entry was read from the <code>FREE_DBI</code> table last, and that entry is now added to the <code>me_pghead</code> list.</p>
+<p>Both elements are only modified during the execution of <code>mdbx_page_alloc</code> function. That function tries to search through the old freelists, starting from the oldest one (smallest transaction ID), going to the newer ones, trying to find a run of consecutive pages of desired length. As the search continues, <code>me_pghead</code> gets expanded, and <code>me_pglast</code> increases.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="mdbx.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                            <a rel="next" href="mdbx-dupsort.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="mdbx.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                    <a rel="next" href="mdbx-dupsort.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+    </body>
+</html>

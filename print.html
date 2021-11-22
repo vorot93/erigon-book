@@ -76,7 +76,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="choice-of-storage-engine.html"><strong aria-hidden="true">1.</strong> Why MDBX is our storage engine</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="dupsort.html"><strong aria-hidden="true">1.1.</strong> DupSort feature explanation</a></li></ol></li><li class="chapter-item expanded "><a href="downloader-design.html"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="introduction.html">Introduction</a></li><li class="chapter-item expanded "><a href="mdbx.html"><strong aria-hidden="true">1.</strong> Why MDBX is our storage engine</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="mdbx-freelist.html"><strong aria-hidden="true">1.1.</strong> Freelist</a></li><li class="chapter-item expanded "><a href="mdbx-dupsort.html"><strong aria-hidden="true">1.2.</strong> DupSort feature explanation</a></li></ol></li><li class="chapter-item expanded "><a href="downloader-design.html"><strong aria-hidden="true">2.</strong> Downloader design</a></li><li class="chapter-item expanded "><a href="flat-state-merklization.html"><strong aria-hidden="true">3.</strong> Flat state merklization</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -177,7 +177,180 @@
 </ul>
 <p>This book documents some of the know-hows that made these achievements possible.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="why-mdbx-is-our-storage-engine"><a class="header" href="#why-mdbx-is-our-storage-engine">Why MDBX is our storage engine</a></h1>
+<p>We often get asked why we opted for our current storage engine, <a href="https://github.com/erthink/libmdbx">MDBX</a>.</p>
+<h2 id="why-not-leveldb--rocksdb"><a class="header" href="#why-not-leveldb--rocksdb">Why not LevelDB / RocksDB?</a></h2>
+<p>Answer is pretty simple: no MVCC.</p>
+<p>MVCC allows us to &quot;stitch together&quot; more complex data objects from more normalised form that is stored in the DB, without loss of consistency (if you do it all in a single read-only transaction). This is used quite a lot in the RPC daemon and simplifies the code a lot. You do not need to explicitly link all the data in the application-level code, you just trust that the database will give you consistent snapshot.</p>
+<p>Other than that, Level and Rocks are not ACID. This makes them extremely brittle and prone to corruption on application crash or power failure. Given that node sync from genesis is not cheap or instantaneous, this is a non-starter for us.</p>
+<h2 id="why-not-badgerdb"><a class="header" href="#why-not-badgerdb">Why not BadgerDB?</a></h2>
+<p>BadgerDB, unlike Level or Rocks, does provide transactions. However, there is a next issue we run into: Badger is based on <a href="https://en.wikipedia.org/wiki/Log-structured_merge-tree">Log-structured merge-tree</a>.</p>
+<p>Badger (and all LSM-based DBs) has background compaction. It's good for some projects and bad for others.</p>
+<p>In Erigon we eliminated most of concurrency (goroutines) for many reasons (too many things happening at the same time). We found that modern SSD (and NVMe) are still pretty bad with concurrent writes - they are way better than HDD, but sequential read is still order of magnitude faster than random reads. Meaning 1 thread touching disk vs 2 threads touching disk - can show 10x degradation.</p>
+<p><em>How does this apply to us?</em></p>
+<p><strong>We removed parallel writes and moved to control all disk touches</strong>. Now we don't really care about &quot;how much WPS database can handle&quot; because now we can fit all writes into 1 write transaction. Doesn't matter if it happens once per 10 minutes or once per 1 second - as long as it's not thousands of parallel WPS. In LMDB 1 write transaction is equal to 1 fsync syscall - all writes during transaction are happening in RAM.</p>
+<p>LSM databases (Badger, LevelDB) are slower on average for random reads, and that read times are more volatile. B+tree is faster and more predictable for random reads.</p>
+<h2 id="why-not-boltdb"><a class="header" href="#why-not-boltdb">Why not BoltDB?</a></h2>
+<p>Unlike Badger, Bolt is a Go library, providing storage engine based on B+tree. It originally fit well, and we had BoltDB backend available until September 2020.</p>
+<p>Bolt lacks certain advanced features that we found useful, like LMDB's sorted duplicates (DupSort). It allows to save space without resorting to compression by storing repetitive keys only once.</p>
+<p>Bolt is not actively maintained anymore, <a href="https://github.com/etcd-io/bbolt">although there is an active fork by etcd team</a>. And finally, it is a Go library, precluding usage and binary compatibility with <a href="https://github.com/torquem-ch/silkworm">Silkworm</a> and <a href="https://github.com/rust-ethereum/akula">Akula</a>.</p>
+<p>For all these reasons we switched to LMDB.</p>
+<h2 id="why-not-lmdb"><a class="header" href="#why-not-lmdb">Why not LMDB?</a></h2>
+<p>We used LMDB in the past, but have moved to MDBX which is a fork of LMDB with multiple improvements:</p>
+<ul>
+<li>Database file growth &quot;geometry&quot; works properly. This is important especially on Windows. In LMDB, one has to specify the memory map size once in advance (currently we use 2Tb by default), and if the database file grows over that limit, one has to restart the process. On Windows, setting memory map size to 2Tb makes database file 2Tb large on the onset, which is not very convenient. With MDBX, memory map size is increased in 2Gb increments. This means occasional remapping, but results in a better user experience.</li>
+<li>MDBX has more strict checks on concurrent use of the transaction handles, as well as overlap read and write transaction within the same thread of execution. This allowed us to find some non-obvious bugs and make behaviour more predictable.</li>
+<li>Over the period of more than 5 years (since it split from LMDB), MDBX accumulated a lot of safety fixes and heisenbug fixes that are still present in LMDB to the best of our knowledge. Some of them we have discovered during our testing, and MDBX maintainer took them seriously and worked on the fixes promptly.</li>
+<li>When it comes to databases that constantly modify data, they generate quite a lot of reclaimable space (also known as &quot;freelist&quot; in LMDB terminology). We had to patch LMDB to fix most serious drawbacks when working with reclaimable space (analysis here: https://github.com/ledgerwatch/erigon/wiki/LMDB-freelist-illustrated-guide). MDBX takes special care of efficient handling of reclaimable space and so far no patches were required.</li>
+<li>According to our tests, MDBX performs slightly better on our workloads.</li>
+<li>MDBX exposes more internal telemetry - more metrics of what happening inside DB. And we have them in Grafana - to make better decisions on app design. For example, after complete transition to MDBX (removing LMDB support) we will implement &quot;commit half-full transactions&quot; strategy to avoid spill/unspill disk touches. This will simplify our code further without affecting performance.</li>
+<li>MDBX has support for &quot;Exclusive open&quot; mode - we using it for DB migrations, to prevent any other reader from accessing the database while DB migration is in progress.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="freelist"><a class="header" href="#freelist">Freelist</a></h1>
+<h2 id="how-modifying-the-data-gives-rise-to-freelist"><a class="header" href="#how-modifying-the-data-gives-rise-to-freelist">How modifying the data gives rise to freelist</a></h2>
+<p>MDBX supports Multi Version Concurrency Control (MVCC), which is a feature that allows readers of the database &quot;lock in&quot; a view of the database and that that view be &quot;frozen&quot;, undisturbed until the reader disconnects. By reader here we understand any transaction (read-only or writable). There is a limitation on how many readers may simultaneously connect, but once allowed to connect, the reader can view the &quot;frozen&quot; image of the database for as long as required. Maintenance of this property puts constraints on how modification of data can be performed. In particular, all modification of data by writeable transactions need to be done using &quot;copy on write&quot; pattern.
+For example, lets imagine this state of the database before modifying an element with value <strong>v5</strong>:
+<img src="pics/mdbx-freelist/1.png" alt="" /></p>
+<p>To ensure that any reader that is currently looking at the database via the <em>root</em> page pointer, or in fact any reader that may come along during the execution of our modifications, sees undisrupted image of the database, our modification must not change any pages that are reachable from the <em>root</em> pointer. Therefore, we create a <em>new root</em> pointer, and create an alternative B+-tree that will contain previous database image with our modifications applied:
+<img src="pics/mdbx-freelist/2.png" alt="" /></p>
+<p>As shown on the picture, this modification will require allocation of four pages (either by increasing the file size, or by recycling previously freed space): <code>H</code>, <code>G</code>, <code>I</code>, <code>J</code>, and three pages <code>A</code>, <code>C</code>, <code>F</code> will be marked as potentially recyclable.</p>
+<p>The list of these potentially recyclable pages is called freelist. Most of the pages added to the freelist during modifications, cannot be recycled while the writeable transaction is in flight. This is because any readers connecting before the writable transaction commits, will still see the <em>root</em> and all the pages reachable from it. This is similar to the problem garbage collector faces when determining unreachable objects. Starting points of reachability analysis for a garbage collector are global variable and stack of active threads. Similarly, the starting point for the MVCC reachability analysis are the <em>root</em> pointer (only one global variable) and the root pointers grabbed by any active readers:
+<img src="pics/mdbx-freelist/3.png" alt="" /></p>
+<h2 id="how-deleting-the-data-gives-rise-to-freelist-in-transaction-objects"><a class="header" href="#how-deleting-the-data-gives-rise-to-freelist-in-transaction-objects">How deleting the data gives rise to freelist (in transaction objects)</a></h2>
+<p>Deleting is a type of modification and all said before about modifications apply here. With deletions, however, there is one more interesting case - pages that were allocated during the transaction (for modification) but then subsequently freed by deletions. For example, if, after modification shown above, we decided to delete record with values <strong>v9</strong> and <strong>v6</strong>, we would end up with an empty page. But this is the page we have previously allocated, and it is not reachable from the <em>root</em> page pointer, therefore it can be reused straight away. Such pages are called &quot;loose pages&quot;:
+<img src="pics/mdbx-freelist/4.png" alt="" /></p>
+<p>In the description below, there is a distinction between emptied pages that cannot be recycled yet, and loose pages. There are stored in the different data structures.</p>
+<p>In MDBX, data can be deleted in two main ways:</p>
+<ol>
+<li><strong>deleting keys from a cursor</strong></li>
+<li><strong>removing an entire table</strong> (DBI)</li>
+</ol>
+<p><strong>Deleting keys from a cursor</strong> may cause rebalancing of the B+-tree, because one of the invariants that need to be maintained in a B+-tree says that all pages, except for the root page, must be at least half-full. So, if deleting keys makes a page less than half-full, rebalancing happens - keys and values are moved between pages. Some of these rebalancing cause some pages become empty.</p>
+<p><strong>Removing an entire table</strong> (DBI) is a simpler operation than deleting keys from a cursor, because it does not require any rebalancing. Any table always starts with its own root page, and pages are never shared between tables. Therefore, removing an entire table requires finding all the pages that belong to that table.</p>
+<p>As we see from above, both ways may produce new empty pages. These empty pages are usually in middle of the database file, and we would like to fill them up (later) with the new data, to prevent the database file from growing too fast.</p>
+<p>Since any changes to the database can only occur as a result of a writeable transaction, a transaction object should have some transient data structures to keep the list of pages this transaction emptied. At the time of the transaction commit, these structures are converted into persistent form inside the database.
+There are two transient data structures in which a transaction object keeps the IDs of emptied pages:</p>
+<ol>
+<li><code>MDBX_IDL mt_free_pgs;</code> Type <code>MDBX_IDL</code> stands for &quot;ID list&quot;, and it is a pointer for a list of 8-byte Page IDs, starting with the length of the list at the index 0. Therefore, you can often see <code>txn-&gt;mt_free_pgs[0]</code> as the expression to take the length of the page ID list. This list is pre-allocated to certain size, and therefore, if something needs to be added, such list sometimes needs to be reallocated and moved.</li>
+<li><code>MDBX_page *mt_loose_pgs;</code> Type <code>MDBX_page</code> is the structure describing page header. At the beginning of any page, there is a space for either page number of a pointer to another page header. Therefore, <code>mt_loose_pgs</code> is the head of a linked list of page headers, which is convenient for adding and remove pages one by one.</li>
+</ol>
+<p>Conceptually, these two data structures of a transaction object contain the same kind of information - pages emptied by the transaction, but they are kept and maintained in different forms (slice of IDs and linked list of page headers). The reason for this is as follows. Loose pages from <code>mt_loose_pgs</code> are allowed to be re-used during the same transaction, whereas the pages from <code>mt_free_pgs</code> are not allowed to be re-used. The re-use happens in the function <code>mdbx_page_alloc</code>. This distinction about allowed re-use drives the decisions on when emptied pages are added to one list or another. Pages that have been allocated by this current transaction (either from the expansion of the database or from recycling of the freelist), are known not to be accessed by any other transactions. Such pages end up being marked with <code>P_DIRTY</code> flag. Therefore, having such flag becomes necessary (but not sufficient) criteria for a page to end up in the <code>mt_loose_pgs</code> linked list when emptied.</p>
+<ol>
+<li>When an entire table is removed, the emptied pages always get added to the <code>mt_free_pgs</code>, ostensibly for efficiency. If there are many page IDs that were emptied, it is very unlikely that many of them have been allocated by the current transaction, so they are all added to the <code>mt_free_pgs</code>, even those some of them might be eligible for <code>mt_loose_pgs</code>. The function where appending to <code>mt_free_pgs</code> is performed is <code>mdbx_drop0</code>.</li>
+<li>When rebalancing is performed, if a page has too few entries, and its neighbour page is also just at the threshold or below, the two pages are merged. This merging creates an empty page, and it is added to the <code>mt_loose_pgs</code> if it is marked with <code>P_DIRTY</code> flag and it is not part of the &quot;special&quot; freelist table <code>FREE_DBI</code>. Otherwise, it is added to the <code>mt_free_pgs</code></li>
+</ol>
+<p>At the transaction commit, both structures <code>mt_free_pgs</code> and <code>mt_loose_pgs</code> are effectively merged together and persisted as a record in the &quot;special&quot; freelist table <code>FREE_DBI</code>. Such record has transaction IDs as a key, and the value is the encoding of the sorted list of page IDs, 8 byte per ID. Transaction IDs increase monotonously throughout the life of the database, so they can be used as &quot;versions&quot; for the purposes of MVCC (Multi Version Concurrency Control). The function that persists these two data structures is <code>mdbx_freelist_save</code>, and it has some nuances that cause performance issues when freelists become large. I will describe the mechanics of this function and the issues later...</p>
+<h2 id="old-pages-state-in-the-environment-object"><a class="header" href="#old-pages-state-in-the-environment-object">Old pages state in the environment object</a></h2>
+<p>Environment object has a field <code>MDBX_pgstate me_pgstate;</code>, which is a structure consisting on two elements. These two elements are &quot;aliased&quot; (using <code>#define</code> directive) to the name <code>me_pghead</code> and <code>me_pglast</code> accordingly.</p>
+<p>The first element, <code>me_pghead</code> is a pointer to the list of page IDs. These are the IDs of pages that can be re-used by the current transaction, if required. Page IDs get into the <code>me_pghead</code> list by being read from the beginning of the freelist table <code>FREE_DBI</code>. You may remember that the keys in the freelist tables are transaction IDs, or in other words, version numbers, indicating &quot;when&quot; certain page IDs became part of the freelist.</p>
+<p>The second element, <code>me_pglast</code>, is a number representing the version number (transaction ID), whose freelist entry was read from the <code>FREE_DBI</code> table last, and that entry is now added to the <code>me_pghead</code> list.</p>
+<p>Both elements are only modified during the execution of <code>mdbx_page_alloc</code> function. That function tries to search through the old freelists, starting from the oldest one (smallest transaction ID), going to the newer ones, trying to find a run of consecutive pages of desired length. As the search continues, <code>me_pghead</code> gets expanded, and <code>me_pglast</code> increases.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="dupsort-feature-explanation"><a class="header" href="#dupsort-feature-explanation">DupSort feature explanation</a></h1>
+<p>If KV database has no concept of &quot;Buckets/Tables/Collections&quot; then all keys must have &quot;Prefix&quot;. For example to store
+Block bodies and headers need use <code>b</code> and <code>h</code> prefixes:</p>
+<pre><code>b1-&gt;encoded_block1
+b2-&gt;encoded_block2
+b3-&gt;encoded_block3
+...
+h1-&gt;encoded_header1
+h2-&gt;encoded_header2
+h3-&gt;encoded_header3
+...
+</code></pre>
+<p>Of course this is 1 byte per key overhead is not very big. But if DB provide concept of named &quot;
+Buckets/Tables/Collections&quot; then need create 2 tables <code>b</code> and <code>h</code> and store there key without prefixes. Physically table
+names will stored only once (not 1 per key).</p>
+<p>But if do 1 step forward - and introduce concept of named &quot;Sub-Buckets/Sub-Tables/Sub-Collections&quot;. Then in will allow
+to store physically once longer prefixes.</p>
+<p>Let's look at ChangeSets. If block N changed account A from value X to Y:<br />
+<code>ChangeSet -&gt; bigEndian(N) -&gt; A -&gt; X</code></p>
+<ul>
+<li><code>ChangeSet</code> - name of Table</li>
+<li><code>bigEndian(N)</code> - name of Sub-Table</li>
+<li><code>A</code> - key inside Sub-Table</li>
+<li><code>X</code> - value inside Sub-Table</li>
+</ul>
+<h2 id="mdbx-supports"><a class="header" href="#mdbx-supports">MDBX supports</a></h2>
+<p>MDBX supports &quot;tables&quot; (it uses name DBI) and supports &quot;sub-tables&quot; (DupSort DBI).</p>
+<pre><code>#MDBX_DUPSORT
+    Duplicate keys may be used in the database. (Or, from another perspective,
+    keys may have multiple data items, stored in sorted order.) By default
+    keys must be unique and may have only a single data item.
+</code></pre>
+<p>MDBX stores keys in Tree(B+Tree), and keys of sub-tables in sub-Tree (which is linked to Tree of table).</p>
+<p>Find value of 1 key, still can be done by single method:</p>
+<pre><code>subTableName, keyInSubTable, value := db.Get(tableName, subTableName, keyInSubTable)
+</code></pre>
+<p>Common pattern to iterate over whole 'normal' table (without sub-table) in a pseudocode:</p>
+<pre><code>cursor := transaction.OpenCursor(tableName)
+for k, v := cursor.Seek(key); k != nil; k, v = cursor.Next() {
+    // logic works with 'k' and 'v' variables
+} 
+</code></pre>
+<p>Iterate over table with sub-table:</p>
+<pre><code>cursor := transaction.OpenCursor(tableName)
+for k, _ := cursor.SeekDup(subTableName, keyInSubTable); k != nil; k, _ = cursor.Next() {
+    // logic works with 'k1', 'k' and 'v' variables
+} 
+</code></pre>
+<p>Enough strait forward. No performance penalty (only profit from smaller database size).</p>
+<h2 id="mdbx-in-depth"><a class="header" href="#mdbx-in-depth">MDBX in-depth</a></h2>
+<p>Max key size: 2022byte (same for key of sub-Table)
+Let's look at ChangeSets. If block N changed account A from value X to Y:<br />
+<code>ChangeSet -&gt; bigEndian(N) -&gt; A -&gt; X</code></p>
+<ul>
+<li><code>ChangeSet</code> - name of Table</li>
+<li><code>bigEndian(N)</code> - name of Sub-Table</li>
+<li><code>A</code> - key inside Sub-Table</li>
+<li><code>X</code> - value inside Sub-Table</li>
+</ul>
+<pre><code>------------------------------------------------------------------------------------------
+    table        | sub-table-name    |      keyAndValueJoinedTogether (no 'value' column)
+------------------------------------------------------------------------------------------
+  'ChangeSets'   | 
+                 | {1}                | {A}+{X}   
+                 |                    | {A2}+{X2}
+                 | {2}                | {A3}+{X3}   
+                 |                    | {A4}+{X4}
+                 | ...                | ...               
+</code></pre>
+<p>It's a bit unexpected, but doesn't change much. All operations are still work:</p>
+<pre><code>subTableName, keyAndValueJoinedTogether := cursor.Get(subTableName, keyInSubTable)
+{N}, {A}+{X} := cursor.Seek({N}, {A})
+</code></pre>
+<p>You need manually separate 'A' and 'X'. But, it unleash bunch of new features!
+Can iterate in sortet manner all changes in block N. Can read only 1 exact change - even if Block changed many megabytes
+of state.</p>
+<p>And format of StorageChangeSetBucket:
+Loc - location hash (key of storage)</p>
+<pre><code>------------------------------------------------------------------------------------------
+    table        | sub-table-name    |      keyAndValueJoinedTogether (no 'value' column)
+------------------------------------------------------------------------------------------
+'StorageChanges' | 
+                 | {1}+{A}+{inc1}     | {Loc1}+{X}
+                 |                    | {Loc2}+{X2}
+                 |                    | {Loc3}+{X3}
+                 | {2}+{A}+{inc1}     | {Loc4}+{X4}
+                 |                    | {Loc5}+{X5}
+                 |                    | {Loc6}+{X6}
+                 |                    | ...             
+</code></pre>
+<p>Because column &quot;keyAndValueJoinedTogether&quot; is stored as key - it has same size limit: 551byte</p>
+<h2 id="mdbx-can-you-do-better"><a class="header" href="#mdbx-can-you-do-better">MDBX, can you do better?</a></h2>
+<p>By default, for each key MDBX does store small metadata (size of data). Indices by nature - store much-much keys.</p>
+<p>If all keys in sub-table (DupSort DBI) have same size - MDBX can store much less metadata.<br />
+(Remember! that &quot;keys in sub-table&quot; it's &quot;keyAndValueJoinedTogether&quot; - this thing must have same size). MDBX called this
+feature DupFixed (can add this flag to table configuration).</p>
+<pre><code>#MDB_DUPFIXED
+	 This flag may only be used in combination with #MDB_DUPSORT. This option
+	 tells the library that the data items for this database are all the same
+	 size, which allows further optimizations in storage and retrieval. When
+	 all data items are the same size, the #MDB_GET_MULTIPLE, #MDB_NEXT_MULTIPLE
+	 and #MDB_PREV_MULTIPLE cursor operations may be used to retrieve multiple
+	 items at once.
+</code></pre>
+<p>It means in 1 db call you can Get/Put up to 4Kb of sub-table keys.</p>
+<h2 id="see-also"><a class="header" href="#see-also">See also</a></h2>
+<p><a href="https://github.com/erthink/libmdbx/blob/master/mdbx.h">MDBX docs</a></p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="downloader-design"><a class="header" href="#downloader-design">Downloader design</a></h1>
 <p>Infrastructure for downloading headers, block bodies, and receipts that was inherited from go-ethereum does not integrate well with the concept of Staged Sync in Erigon. The code for this infrastructure is mostly contained in <code>eth/downloader</code> package. We would like
 to replace it with more minimalistic infrastructure that fits better into &quot;Staged Sync&quot; concept with more judicious use of concurrency and
